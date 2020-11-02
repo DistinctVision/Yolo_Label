@@ -6,8 +6,13 @@
 #include <QKeyEvent>
 #include <QDebug>
 #include <QShortcut>
+#include <QFileInfo>
+#include <QDir>
 
 #include <iomanip>
+
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 using std::cout;
 using std::endl;
@@ -41,28 +46,19 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_pushButton_open_files_clicked()
 {
-    bool bRetImgDir     = false;
-    bool bRetObjFile    = false;
+    if (!open_video_file())
+        return;
 
-    open_img_dir(bRetImgDir);
-
-    if (!bRetImgDir) return ;
-
-    open_obj_file(bRetObjFile);
-
-    if (!bRetObjFile) return ;
+    if (!open_obj_file())
+        return;
 
     init();
 }
 
 void MainWindow::on_pushButton_change_dir_clicked()
 {
-    bool bRetImgDir     = false;
-    bool bRetObjFile    = false;
-
-    open_img_dir(bRetImgDir);
-
-    if (!bRetImgDir) return ;
+    if (!open_video_file())
+        return;
 
     init();
 }
@@ -82,28 +78,62 @@ void MainWindow::init()
 void MainWindow::set_label_progress(const int fileIndex)
 {
     QString strCurFileIndex = QString::number(fileIndex);
-    QString strEndFileIndex = QString::number(m_imgList.size() - 1);
+    QString strEndFileIndex;
+    if (m_video)
+        strEndFileIndex = QString::number(m_video->get(cv::CAP_PROP_FRAME_COUNT) - 1);
+    else
+        strEndFileIndex = QString::number(m_imgList.size() - 1);
 
     ui->label_progress->setText(strCurFileIndex + " / " + strEndFileIndex);
 }
 
 void MainWindow::set_focused_file(const int fileIndex)
 {
-    ui->label_file->setText("File: " + m_imgList.at(fileIndex));
+    if (m_video)
+        ui->label_file->setText(QString("File: video[%1]").arg(fileIndex));
+    else
+        ui->label_file->setText("File: " + m_imgList.at(fileIndex));
 }
 
-void MainWindow::goto_img(const int fileIndex)
+void MainWindow::goto_img(const int frameIndex)
 {
-    bool bIndexIsOutOfRange = (fileIndex < 0 || fileIndex > m_imgList.size() - 1);
-    if (bIndexIsOutOfRange) return;
+    if (m_video)
+    {
+        if (m_imgIndex < 0)
+            m_imgIndex = 0;
+        if (!m_video->set(cv::CAP_PROP_POS_FRAMES, frameIndex))
+        {
+            m_imgIndex = 0;
+            qWarning() << "Error on seek to frame " << frameIndex;
+            return;
+        }
 
-    m_imgIndex = fileIndex;
+        m_imgIndex = frameIndex;
 
-    bool bImgOpened;
-    ui->label_image->openImage(m_imgList.at(m_imgIndex), bImgOpened);
+        if (!m_video->read(m_currentCvFrame))
+        {
+            //m_imgIndex = 0;
+            //qWarning() << "Error on seek to frame " << frameIndex;
+            return;
+        }
+        cv::cvtColor(m_currentCvFrame, m_currentCvFrame, cv::COLOR_BGR2RGB);
+        ui->label_image->setCvImage(m_currentCvFrame);
 
-    ui->label_image->loadLabelData(get_labeling_data(m_imgList.at(m_imgIndex)));
-    ui->label_image->showImage();
+        ui->label_image->loadLabelData(get_labeling_data(QString(m_imgDir + "/frame_%1.").arg(frameIndex)));
+        ui->label_image->showImage();
+    }
+    else
+    {
+        bool bIndexIsOutOfRange = (frameIndex < 0 || frameIndex > m_imgList.size() - 1);
+        if (bIndexIsOutOfRange) return;
+
+        m_imgIndex = frameIndex;
+
+        ui->label_image->openImage(m_imgList.at(m_imgIndex));
+
+        ui->label_image->loadLabelData(get_labeling_data(m_imgList.at(m_imgIndex)));
+        ui->label_image->showImage();
+    }
 
     set_label_progress(m_imgIndex);
     set_focused_file(m_imgIndex);
@@ -116,35 +146,50 @@ void MainWindow::goto_img(const int fileIndex)
 
 void MainWindow::next_img(bool bSavePrev)
 {
-    if(bSavePrev && ui->label_image->isOpened()) save_label_data();
+    if (bSavePrev && ui->label_image->isOpened())
+        save_label_data();
     goto_img(m_imgIndex + 1);
 }
 
 void MainWindow::prev_img(bool bSavePrev)
 {
-    if(bSavePrev) save_label_data();
+    if (bSavePrev)
+        save_label_data();
     goto_img(m_imgIndex - 1);
 }
 
 void MainWindow::save_label_data()const
 {
-    if(m_imgList.size() == 0) return;
+    QString qstrOutputLabelData;
 
-    QString qstrOutputLabelData = get_labeling_data(m_imgList.at(m_imgIndex));
+    if (m_video)
+    {
+        if (ui->label_image->m_objBoundingBoxes.size() == 0)
+            return;
+        QString path = m_imgDir + QString("/frame_%1.").arg(m_imgIndex);
+        qstrOutputLabelData = get_labeling_data(path);
+        cv::imwrite((path + "jpg").toStdString(), m_currentCvFrame);
+    }
+    else
+    {
+        if (m_imgList.size() == 0)
+            return;
+        qstrOutputLabelData = get_labeling_data(m_imgList.at(m_imgIndex));
+    }
 
     ofstream fileOutputLabelData(qstrOutputLabelData.toStdString());
 
-    if(fileOutputLabelData.is_open())
+    if (fileOutputLabelData.is_open())
     {
-        for(int i = 0; i < ui->label_image->m_objBoundingBoxes.size(); i++)
+        for (int i = 0; i < ui->label_image->m_objBoundingBoxes.size(); i++)
         {
             ObjectLabelingBox objBox = ui->label_image->m_objBoundingBoxes[i];
 
-            if(ui->checkBox_cropping->isChecked())
+            if (!m_video && ui->checkBox_cropping->isChecked())
             {
                 QImage cropped = ui->label_image->crop(ui->label_image->cvtRelativeToAbsoluteRectInImage(objBox.box));
 
-                if(!cropped.isNull())
+                if (!cropped.isNull())
                 {
                     string strImgFile   = m_imgList.at(m_imgIndex).toStdString();
 
@@ -185,27 +230,40 @@ void MainWindow::clear_label_data()
 
 void MainWindow::remove_img()
 {
-    if(m_imgList.size() > 0) {
-        //remove a image
-        QFile::remove(m_imgList.at(m_imgIndex));
-
-        //remove a txt file
-        QString qstrOutputLabelData = get_labeling_data(m_imgList.at(m_imgIndex));
-        QFile::remove(qstrOutputLabelData);
-
-        m_imgList.removeAt(m_imgIndex);
-
-        if(m_imgList.size() == 0)
-        {
-            pjreddie_style_msgBox(QMessageBox::Information,"End", "In directory, there are not any image. program quit.");
-            QCoreApplication::quit();
-        }
-        else if( m_imgIndex == m_imgList.size())
-        {
-            m_imgIndex --;
-        }
-
+    if (m_video)
+    {
+        QString labelDataPath = get_labeling_data(m_imgDir + QString("/frame_%1.").arg(m_imgDir).arg(m_imgIndex));
+        QFile::remove(labelDataPath);
+        m_imgIndex--;
+        if (m_imgIndex < 0)
+            m_imgIndex = 0;
         goto_img(m_imgIndex);
+    }
+    else
+    {
+        if (m_imgList.size() > 0)
+        {
+            //remove a image
+            QFile::remove(m_imgList.at(m_imgIndex));
+
+            //remove a txt file
+            QString qstrOutputLabelData = get_labeling_data(m_imgList.at(m_imgIndex));
+            QFile::remove(qstrOutputLabelData);
+
+            m_imgList.removeAt(m_imgIndex);
+
+            if (m_imgList.size() == 0)
+            {
+                pjreddie_style_msgBox(QMessageBox::Information,"End", "In directory, there are not any image. program quit.");
+                QCoreApplication::quit();
+            }
+            else if (m_imgIndex == m_imgList.size())
+            {
+                m_imgIndex--;
+            }
+
+            goto_img(m_imgIndex);
+        }
     }
 }
 
@@ -223,10 +281,10 @@ void MainWindow::load_label_list_data(QString qstrLabelListFile)
 {
     ifstream inputLabelListFile(qstrLabelListFile.toStdString());
 
-    if(inputLabelListFile.is_open())
+    if (inputLabelListFile.is_open())
     {
 
-        for(int i = 0 ; i <= ui->tableWidget_label->rowCount(); i++)
+        for (int i = 0 ; i <= ui->tableWidget_label->rowCount(); i++)
             ui->tableWidget_label->removeRow(ui->tableWidget_label->currentRow());
 
         m_objList.clear();
@@ -236,12 +294,12 @@ void MainWindow::load_label_list_data(QString qstrLabelListFile)
 
         string strLabel;
         int fileIndex = 0;
-        while(getline(inputLabelListFile, strLabel))
+        while (getline(inputLabelListFile, strLabel))
         {
             int nRow = ui->tableWidget_label->rowCount();
   
             QString qstrLabel   = QString().fromStdString(strLabel);
-            QColor  labelColor  = label_img::BOX_COLORS[(fileIndex++)%10];
+            QColor  labelColor  = LabelImage::BOX_COLORS[(fileIndex++)%10];
             m_objList << qstrLabel;
 
             ui->tableWidget_label->insertRow(nRow);
@@ -270,7 +328,7 @@ void MainWindow::set_label(const int labelIndex)
 {
     bool bIndexIsOutOfRange = (labelIndex < 0 || labelIndex > m_objList.size() - 1);
 
-    if(!bIndexIsOutOfRange)
+    if (!bIndexIsOutOfRange)
     {
         m_objIndex = labelIndex;
         ui->label_image->setFocusObjectLabel(m_objIndex);
@@ -299,12 +357,60 @@ void MainWindow::pjreddie_style_msgBox(QMessageBox::Icon icon, QString title, QS
     msgBox.exec();
 }
 
-void MainWindow::open_img_dir(bool& ret)
+bool MainWindow::open_video_file()
 {
+    m_video.reset();
+    m_imgDir.clear();
+    m_imgList.clear();
+
     pjreddie_style_msgBox(QMessageBox::Information,"Help", "Step 1. Open Your Data Set Directory");
 
+    QWidget w;
+    QString videoFile = QFileDialog::getOpenFileName(
+                &w,
+                tr("Open Dataset Directory"),
+                "./");
+    if (videoFile.isEmpty())
+        return false;
+
+    QFileInfo videoFileInfo(videoFile);
+    QDir dir = videoFileInfo.absoluteDir();
+    if (!dir.exists(videoFileInfo.baseName()))
+    {
+        if (!dir.mkdir(videoFileInfo.baseName()))
+        {
+            pjreddie_style_msgBox(QMessageBox::Critical, "Error", "Cannot make dir for images if video file.");
+            return false;
+        }
+    }
+    if (!dir.cd(videoFileInfo.baseName()))
+    {
+        pjreddie_style_msgBox(QMessageBox::Critical, "Error", "Cannot move to dir of images");
+        return false;
+    }
+    m_imgDir = dir.absolutePath();
+
+    m_video = cv::makePtr<cv::VideoCapture>();
+    if (!m_video->open(videoFile.toStdString()))
+    {
+        m_video.reset();
+        m_imgDir.clear();
+        pjreddie_style_msgBox(QMessageBox::Critical, "Error", "Cannot open video file.");
+        return false;
+    }
+
+    return true;
+}
+
+bool MainWindow::open_img_dir()
+{
+    m_video.reset();
+
+    pjreddie_style_msgBox(QMessageBox::Information,"Help", "Step 1. Open Your Data Set Directory");
+
+    QWidget w;
     QString imgDir = QFileDialog::getExistingDirectory(
-                nullptr,
+                &w,
                 tr("Open Dataset Directory"),
                 "./",QFileDialog::ShowDirsOnly);
 
@@ -314,23 +420,21 @@ void MainWindow::open_img_dir(bool& ret)
                 QStringList() << "*.jpg" << "*.JPG" << "*.png",
                 QDir::Files);
 
-    if(fileList.empty())
+    if (fileList.empty())
     {
-        ret = false;
         pjreddie_style_msgBox(QMessageBox::Critical,"Error", "This folder is empty");
+        return false;
     }
-    else
-    {
-        ret = true;
-        m_imgDir    = imgDir;
-        m_imgList  = fileList;
 
-        for(QString& str: m_imgList)
-            str = m_imgDir + "/" + str;
-    }
+    m_imgDir    = imgDir;
+    m_imgList  = fileList;
+
+    for (QString& str: m_imgList)
+        str = m_imgDir + "/" + str;
+    return true;
 }
 
-void MainWindow::open_obj_file(bool& ret)
+bool MainWindow::open_obj_file()
 {
     pjreddie_style_msgBox(QMessageBox::Information,"Help", "Step 2. Open Your Label List File(*.txt or *.names)");
 
@@ -340,16 +444,13 @@ void MainWindow::open_obj_file(bool& ret)
                 "./",
                 tr("LabelList Files (*.txt *.names)"));
 
-    if(fileLabelList.size() == 0)
+    if (fileLabelList.size() == 0)
     {
-        ret = false;
         pjreddie_style_msgBox(QMessageBox::Critical,"Error", "LabelList file is not opened()");
+        return false;
     }
-    else
-    {
-        ret = true;
-        load_label_list_data(fileLabelList);
-    }
+    load_label_list_data(fileLabelList);
+    return true;
 }
 
 void MainWindow::reupdate_img_list()
@@ -446,7 +547,14 @@ void MainWindow::init_button_event()
 void MainWindow::init_horizontal_slider()
 {
     ui->horizontalSlider_images->setEnabled(true);
-    ui->horizontalSlider_images->setRange(0, m_imgList.size() - 1);
+    if (m_video)
+    {
+        ui->horizontalSlider_images->setRange(0, m_video->get(cv::CAP_PROP_FRAME_COUNT) - 1);
+    }
+    else
+    {
+        ui->horizontalSlider_images->setRange(0, m_imgList.size() - 1);
+    }
     ui->horizontalSlider_images->blockSignals(true);
     ui->horizontalSlider_images->setValue(0);
     ui->horizontalSlider_images->blockSignals(false);

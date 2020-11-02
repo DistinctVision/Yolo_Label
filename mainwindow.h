@@ -9,6 +9,9 @@
 #include <iostream>
 #include <fstream>
 
+#include <opencv2/core.hpp>
+#include <opencv2/videoio.hpp>
+
 namespace Ui {
 class MainWindow;
 }
@@ -52,7 +55,6 @@ private:
     void            init_button_event();
     void            init_horizontal_slider();
 
-    void            img_open(const int);
     void            set_label_progress(const int);
     void            set_focused_file(const int);
 
@@ -66,22 +68,27 @@ private:
 
     void            pjreddie_style_msgBox(QMessageBox::Icon, QString, QString);
 
-    void            open_img_dir(bool&);
-    void            open_obj_file(bool&);
+    bool            open_video_file();
+    bool            open_img_dir();
+    bool            open_obj_file();
 
     void            reupdate_img_list();
 
     Ui::MainWindow *ui;
 
+protected:
+    void    wheelEvent(QWheelEvent *);
+
+private:
     QString         m_imgDir;
     QStringList     m_imgList;
     int             m_imgIndex;
 
+    cv::Ptr<cv::VideoCapture> m_video;
+    cv::Mat m_currentCvFrame;
+
     QStringList     m_objList;
     int             m_objIndex;
-
-protected:
-    void    wheelEvent(QWheelEvent *);
 };
 
 #endif // MAINWINDOW_H

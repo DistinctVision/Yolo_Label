@@ -8,17 +8,19 @@
 #include <iostream>
 #include <fstream>
 
+#include <opencv2/core.hpp>
+
 struct ObjectLabelingBox
 {
     int     label;
     QRectF  box;
 };
 
-class label_img : public QLabel
+class LabelImage : public QLabel
 {
     Q_OBJECT
 public:
-    label_img(QWidget *parent = nullptr);
+    LabelImage(QWidget *parent = nullptr);
 
     void mouseMoveEvent(QMouseEvent *ev);
     void mousePressEvent(QMouseEvent *ev);
@@ -39,7 +41,8 @@ public:
     QVector <ObjectLabelingBox>     m_objBoundingBoxes;
 
     void init();
-    void openImage(const QString &, bool& ret);
+    bool openImage(const QString &);
+    bool setCvImage(const cv::Mat & cvImage);
     void showImage();
 
     void loadLabelData(const QString & );

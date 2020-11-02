@@ -4,7 +4,7 @@
 
 using std::ifstream;
 
-QColor label_img::BOX_COLORS[10] ={  Qt::green,
+QColor LabelImage::BOX_COLORS[10] ={  Qt::green,
         Qt::darkGreen,
         Qt::blue,
         Qt::darkBlue,
@@ -15,13 +15,13 @@ QColor label_img::BOX_COLORS[10] ={  Qt::green,
         Qt::cyan,
         Qt::darkCyan};
 
-label_img::label_img(QWidget *parent)
+LabelImage::LabelImage(QWidget *parent)
     :QLabel(parent)
 {
     init();
 }
 
-void label_img::mouseMoveEvent(QMouseEvent *ev)
+void LabelImage::mouseMoveEvent(QMouseEvent *ev)
 {
     setMousePosition(ev->x(), ev->y());
 
@@ -29,7 +29,7 @@ void label_img::mouseMoveEvent(QMouseEvent *ev)
     emit Mouse_Moved();
 }
 
-void label_img::mousePressEvent(QMouseEvent *ev)
+void LabelImage::mousePressEvent(QMouseEvent *ev)
 {
     setMousePosition(ev->x(), ev->y());
 
@@ -68,12 +68,12 @@ void label_img::mousePressEvent(QMouseEvent *ev)
     emit Mouse_Pressed();
 }
 
-void label_img::mouseReleaseEvent(QMouseEvent *ev)
+void LabelImage::mouseReleaseEvent(QMouseEvent *ev)
 {
     emit Mouse_Release();
 }
 
-void label_img::init()
+void LabelImage::init()
 {
     m_objBoundingBoxes.clear();
     m_bLabelingStarted              = false;
@@ -92,7 +92,7 @@ void label_img::init()
     }
 }
 
-void label_img::setMousePosition(int x, int y)
+void LabelImage::setMousePosition(int x, int y)
 {
     if(x < 0) x = 0;
     if(y < 0) y = 0;
@@ -103,43 +103,70 @@ void label_img::setMousePosition(int x, int y)
     m_relative_mouse_pos_in_ui = cvtAbsoluteToRelativePoint(QPoint(x, y));
 }
 
-void label_img::openImage(const QString &qstrImg, bool &ret)
+bool LabelImage::openImage(const QString & qstrImg)
 {
     QImage img(qstrImg);
 
-    if(img.isNull())
+    if (img.isNull())
     {
         m_inputImg = QImage();
-        ret = false;
+        return  false;
+    }
+    m_objBoundingBoxes.clear();
+
+    m_inputImg          = img.copy();
+    m_inputImg          = m_inputImg.convertToFormat(QImage::Format_RGB888);
+
+    m_bLabelingStarted  = false;
+
+    QPoint mousePosInUi     = this->mapFromGlobal(QCursor::pos());
+    bool mouse_is_in_image  = QRect(0, 0, this->width(), this->height()).contains(mousePosInUi);
+
+    if  (mouse_is_in_image)
+    {
+        setMousePosition(mousePosInUi.x(), mousePosInUi.y());
     }
     else
     {
-        ret = true;
-
-        m_objBoundingBoxes.clear();
-
-        m_inputImg          = img.copy();
-        m_inputImg          = m_inputImg.convertToFormat(QImage::Format_RGB888);
-
-        m_bLabelingStarted  = false;
-
-        QPoint mousePosInUi     = this->mapFromGlobal(QCursor::pos());
-        bool mouse_is_in_image  = QRect(0, 0, this->width(), this->height()).contains(mousePosInUi);
-
-        if  (mouse_is_in_image)
-        {
-            setMousePosition(mousePosInUi.x(), mousePosInUi.y());
-        }
-        else
-        {
-            setMousePosition(0., 0.);
-        }
+        setMousePosition(0., 0.);
     }
+
+    return true;
 }
 
-void label_img::showImage()
+bool LabelImage::setCvImage(const cv::Mat & cvImage)
 {
-    if(m_inputImg.isNull()) return;
+    if (cvImage.empty())
+    {
+        m_inputImg = QImage();
+        return  false;
+    }
+    QImage img(cvImage.data, cvImage.size().width, cvImage.size().height, QImage::Format_RGB888);
+    m_objBoundingBoxes.clear();
+
+    m_inputImg          = img.copy().convertToFormat(QImage::Format_RGB888);
+
+    m_bLabelingStarted  = false;
+
+    QPoint mousePosInUi     = this->mapFromGlobal(QCursor::pos());
+    bool mouse_is_in_image  = QRect(0, 0, this->width(), this->height()).contains(mousePosInUi);
+
+    if  (mouse_is_in_image)
+    {
+        setMousePosition(mousePosInUi.x(), mousePosInUi.y());
+    }
+    else
+    {
+        setMousePosition(0., 0.);
+    }
+
+    return true;
+}
+
+void LabelImage::showImage()
+{
+    if (m_inputImg.isNull())
+        return;
 
     QImage imageOnUi = m_inputImg.scaled(this->width(), this->height(),Qt::IgnoreAspectRatio,Qt::SmoothTransformation);
 
@@ -156,7 +183,7 @@ void label_img::showImage()
     this->setPixmap(QPixmap::fromImage(imageOnUi));
 }
 
-void label_img::loadLabelData(const QString& labelFilePath)
+void LabelImage::loadLabelData(const QString& labelFilePath)
 {
     ifstream inputFile(labelFilePath.toStdString());
 
@@ -197,27 +224,27 @@ void label_img::loadLabelData(const QString& labelFilePath)
     }
 }
 
-void label_img::setFocusObjectLabel(int nLabel)
+void LabelImage::setFocusObjectLabel(int nLabel)
 {
     m_focusedObjectLabel = nLabel;
 }
 
-void label_img::setFocusObjectName(QString qstrName)
+void LabelImage::setFocusObjectName(QString qstrName)
 {
     m_foucsedObjectName = qstrName;
 }
 
-bool label_img::isOpened()
+bool LabelImage::isOpened()
 {
     return !m_inputImg.isNull();
 }
 
-QImage label_img::crop(QRect rect)
+QImage LabelImage::crop(QRect rect)
 {
     return m_inputImg.copy(rect);
 }
 
-void label_img::drawCrossLine(QPainter& painter, QColor color, int thickWidth)
+void LabelImage::drawCrossLine(QPainter& painter, QColor color, int thickWidth)
 {
     if(m_relative_mouse_pos_in_ui == QPointF(0., 0.)) return;
 
@@ -237,7 +264,7 @@ void label_img::drawCrossLine(QPainter& painter, QColor color, int thickWidth)
     std::cout << "draw Cross Line" << std::endl;
 }
 
-void label_img::drawFocusedObjectBox(QPainter& painter, Qt::GlobalColor color, int thickWidth)
+void LabelImage::drawFocusedObjectBox(QPainter& painter, Qt::GlobalColor color, int thickWidth)
 {
     if(m_bLabelingStarted == true)
     {
@@ -256,7 +283,7 @@ void label_img::drawFocusedObjectBox(QPainter& painter, Qt::GlobalColor color, i
     }
 }
 
-void label_img::drawObjectBoxes(QPainter& painter, int thickWidth)
+void LabelImage::drawObjectBoxes(QPainter& painter, int thickWidth)
 {
     QPen pen;
     pen.setWidth(thickWidth);
@@ -270,7 +297,7 @@ void label_img::drawObjectBoxes(QPainter& painter, int thickWidth)
     }
 }
 
-void label_img::removeFocusedObjectBox(QPointF point)
+void LabelImage::removeFocusedObjectBox(QPointF point)
 {
     int     removeBoxIdx = -1;
     double  nearestBoxDistance   = 99999999999999.;
@@ -296,7 +323,7 @@ void label_img::removeFocusedObjectBox(QPointF point)
     }
 }
 
-QRectF label_img::getRelativeRectFromTwoPoints(QPointF p1, QPointF p2)
+QRectF LabelImage::getRelativeRectFromTwoPoints(QPointF p1, QPointF p2)
 {
     double midX    = (p1.x() + p2.x()) / 2.;
     double midY    = (p1.y() + p2.y()) / 2.;
@@ -309,7 +336,7 @@ QRectF label_img::getRelativeRectFromTwoPoints(QPointF p1, QPointF p2)
     return QRectF(topLeftPoint, bottomRightPoint);
 }
 
-QRect label_img::cvtRelativeToAbsoluteRectInUi(QRectF rectF)
+QRect LabelImage::cvtRelativeToAbsoluteRectInUi(QRectF rectF)
 {
     return QRect(static_cast<int>(rectF.x() * this->width() + 0.5),
                  static_cast<int>(rectF.y() * this->height()+ 0.5),
@@ -317,7 +344,7 @@ QRect label_img::cvtRelativeToAbsoluteRectInUi(QRectF rectF)
                  static_cast<int>(rectF.height()* this->height()+ 0.5));
 }
 
-QRect label_img::cvtRelativeToAbsoluteRectInImage(QRectF rectF)
+QRect LabelImage::cvtRelativeToAbsoluteRectInImage(QRectF rectF)
 {
     return QRect(static_cast<int>(rectF.x() * m_inputImg.width()),
                  static_cast<int>(rectF.y() * m_inputImg.height()),
@@ -325,12 +352,12 @@ QRect label_img::cvtRelativeToAbsoluteRectInImage(QRectF rectF)
                  static_cast<int>(rectF.height()* m_inputImg.height()));
 }
 
-QPoint label_img::cvtRelativeToAbsolutePoint(QPointF p)
+QPoint LabelImage::cvtRelativeToAbsolutePoint(QPointF p)
 {
     return QPoint(static_cast<int>(p.x() * this->width() + 0.5), static_cast<int>(p.y() * this->height() + 0.5));
 }
 
-QPointF label_img::cvtAbsoluteToRelativePoint(QPoint p)
+QPointF LabelImage::cvtAbsoluteToRelativePoint(QPoint p)
 {
     return QPointF(static_cast<double>(p.x()) / this->width(), static_cast<double>(p.y()) / this->height());
 }

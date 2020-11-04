@@ -168,9 +168,11 @@ void MainWindow::save_label_data()const
     {
         if (ui->label_image->objBoundingBoxes().size() == 0)
             return;
+        cv::Mat cvFrame;
+        cv::cvtColor(m_currentCvFrame, cvFrame, cv::COLOR_BGR2RGB);
         QString path = m_imgDir + QString("/frame_%1.").arg(m_imgIndex);
         qstrOutputLabelData = get_labeling_data(path);
-        cv::imwrite((path + "jpg").toStdString(), m_currentCvFrame);
+        cv::imwrite((path + "jpg").toStdString(), cvFrame);
     }
     else
     {
@@ -492,7 +494,7 @@ QVector<ObjectLabelingBox> MainWindow::_detectObjects(const cv::Mat & image)
         {
             float * v_ptr = out.ptr<float>(y, 0);
             float confidence = v_ptr[5];
-            if (confidence < 0.01f)
+            if (confidence < 0.2f)
                 continue;
             float hw = v_ptr[2] * 0.5f;
             float hh = v_ptr[3] * 0.5f;

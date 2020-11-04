@@ -25,13 +25,13 @@ DEFINES += QT_DEPRECATED_WARNINGS
 CONFIG += c++11
 
 SOURCES += \
+        labelimage.cpp \
         main.cpp \
-        mainwindow.cpp \
-    label_img.cpp
+        mainwindow.cpp
 
 HEADERS += \
-        mainwindow.h \
-    label_img.h
+        labelimage.h \
+        mainwindow.h
 
 FORMS += \
         mainwindow.ui

@@ -14,11 +14,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
-using std::cout;
-using std::endl;
-using std::ofstream;
-using std::ifstream;
-using std::string;
+using namespace std;
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -37,6 +33,11 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_D), this), SIGNAL(activated()), this, SLOT(remove_img()));
 
     init_table_widget();
+
+    m_net = cv::dnn::readNetFromDarknet("D:\\hands\\yolov4-tiny-hand.cfg",
+                                        "D:\\hands\\backup\\yolov4-tiny-hand_last.weights");
+    m_net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+    m_net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
 }
 
 MainWindow::~MainWindow()
@@ -118,6 +119,7 @@ void MainWindow::goto_img(const int frameIndex)
         }
         cv::cvtColor(m_currentCvFrame, m_currentCvFrame, cv::COLOR_BGR2RGB);
         ui->label_image->setCvImage(m_currentCvFrame);
+        ui->label_image->setDetectedObjects(_detectObjects(m_currentCvFrame));
 
         ui->label_image->loadLabelData(get_labeling_data(QString(m_imgDir + "/frame_%1.").arg(frameIndex)));
         ui->label_image->showImage();
@@ -164,7 +166,7 @@ void MainWindow::save_label_data()const
 
     if (m_video)
     {
-        if (ui->label_image->m_objBoundingBoxes.size() == 0)
+        if (ui->label_image->objBoundingBoxes().size() == 0)
             return;
         QString path = m_imgDir + QString("/frame_%1.").arg(m_imgIndex);
         qstrOutputLabelData = get_labeling_data(path);
@@ -181,9 +183,10 @@ void MainWindow::save_label_data()const
 
     if (fileOutputLabelData.is_open())
     {
-        for (int i = 0; i < ui->label_image->m_objBoundingBoxes.size(); i++)
+        QVector<ObjectLabelingBox> objBoundingBoxes = ui->label_image->objBoundingBoxes();
+        for (int i = 0; i < objBoundingBoxes.size(); i++)
         {
-            ObjectLabelingBox objBox = ui->label_image->m_objBoundingBoxes[i];
+            ObjectLabelingBox objBox = objBoundingBoxes[i];
 
             if (!m_video && ui->checkBox_cropping->isChecked())
             {
@@ -191,7 +194,7 @@ void MainWindow::save_label_data()const
 
                 if (!cropped.isNull())
                 {
-                    string strImgFile   = m_imgList.at(m_imgIndex).toStdString();
+                    string strImgFile = m_imgList.at(m_imgIndex).toStdString();
 
                     strImgFile = strImgFile.substr( strImgFile.find_last_of('/') + 1,
                                                     strImgFile.find_last_of('.') - strImgFile.find_last_of('/') - 1);
@@ -224,7 +227,7 @@ void MainWindow::save_label_data()const
 
 void MainWindow::clear_label_data()
 {
-    ui->label_image->m_objBoundingBoxes.clear();
+    ui->label_image->resetObjBoundingBoxes();
     ui->label_image->showImage();
 }
 
@@ -290,7 +293,7 @@ void MainWindow::load_label_list_data(QString qstrLabelListFile)
         m_objList.clear();
 
         ui->tableWidget_label->setRowCount(0);
-        ui->label_image->m_drawObjectBoxColor.clear();
+        QVector<QColor> drawObjectBoxColors;
 
         string strLabel;
         int fileIndex = 0;
@@ -311,8 +314,10 @@ void MainWindow::load_label_list_data(QString qstrLabelListFile)
             ui->tableWidget_label->item(nRow, 1)->setBackgroundColor(labelColor);
             ui->tableWidget_label->item(nRow, 1)->setFlags(ui->tableWidget_label->item(nRow, 1)->flags() ^  Qt::ItemIsEditable ^  Qt::ItemIsSelectable);
 
-            ui->label_image->m_drawObjectBoxColor.push_back(labelColor);
+            drawObjectBoxColors.push_back(labelColor);
         }
+
+        ui->label_image->setDrawObjectBoxColors(drawObjectBoxColors);
     }
 }
 
@@ -339,7 +344,9 @@ void MainWindow::set_label(const int labelIndex)
 
 void MainWindow::set_label_color(const int index, const QColor color)
 {
-    ui->label_image->m_drawObjectBoxColor.replace(index, color);
+    QVector<QColor> drawObjectBoxColors = ui->label_image->getDrawObjectBoxColors();
+    drawObjectBoxColors.replace(index, color);
+    ui->label_image->setDrawObjectBoxColors(drawObjectBoxColors);
 }
 
 void MainWindow::pjreddie_style_msgBox(QMessageBox::Icon icon, QString title, QString content)
@@ -363,7 +370,7 @@ bool MainWindow::open_video_file()
     m_imgDir.clear();
     m_imgList.clear();
 
-    pjreddie_style_msgBox(QMessageBox::Information,"Help", "Step 1. Open Your Data Set Directory");
+    //pjreddie_style_msgBox(QMessageBox::Information,"Help", "Step 1. Open Your Data Set Directory");
 
     QWidget w;
     QString videoFile = QFileDialog::getOpenFileName(
@@ -406,7 +413,7 @@ bool MainWindow::open_img_dir()
 {
     m_video.reset();
 
-    pjreddie_style_msgBox(QMessageBox::Information,"Help", "Step 1. Open Your Data Set Directory");
+    //pjreddie_style_msgBox(QMessageBox::Information,"Help", "Step 1. Open Your Data Set Directory");
 
     QWidget w;
     QString imgDir = QFileDialog::getExistingDirectory(
@@ -436,7 +443,7 @@ bool MainWindow::open_img_dir()
 
 bool MainWindow::open_obj_file()
 {
-    pjreddie_style_msgBox(QMessageBox::Information,"Help", "Step 2. Open Your Label List File(*.txt or *.names)");
+    //pjreddie_style_msgBox(QMessageBox::Information,"Help", "Step 2. Open Your Label List File(*.txt or *.names)");
 
     QString fileLabelList = QFileDialog::getOpenFileName(
                 nullptr,
@@ -460,10 +467,41 @@ void MainWindow::reupdate_img_list()
 
 void MainWindow::wheelEvent(QWheelEvent *ev)
 {
-    if(ev->delta() > 0) // up Wheel
+    if (ev->delta() > 0) // up Wheel
         prev_img();
-    else if(ev->delta() < 0) //down Wheel
+    else if (ev->delta() < 0) //down Wheel
         next_img();
+}
+
+QVector<ObjectLabelingBox> MainWindow::_detectObjects(const cv::Mat & image)
+{
+    vector<string> labelNames = m_net.getUnconnectedOutLayersNames();
+
+    cv::Mat outputBlob = cv::dnn::blobFromImage(image,
+                           1.0 / 256.0, cv::Size(416, 416),
+                           cv::Scalar(0.0), true, false);
+    m_net.setInput(outputBlob);
+    vector<cv::Mat> output;
+    m_net.forward(output, labelNames);
+
+    QVector<ObjectLabelingBox> boxes;
+    for (size_t i = 0; i < output.size(); ++i)
+    {
+        cv::Mat out = output.at(i);
+        for (int y = 0; y < out.size().height; ++y)
+        {
+            float * v_ptr = out.ptr<float>(y, 0);
+            float confidence = v_ptr[5];
+            if (confidence < 0.01f)
+                continue;
+            float hw = v_ptr[2] * 0.5f;
+            float hh = v_ptr[3] * 0.5f;
+            boxes.push_back({ 0, QRectF((v_ptr[0] - hw), (v_ptr[1] - hh),
+                                        v_ptr[2], v_ptr[3]) });
+        }
+    }
+
+    return boxes;
 }
 
 void MainWindow::on_pushButton_prev_clicked()
@@ -483,15 +521,15 @@ void MainWindow::keyPressEvent(QKeyEvent * event)
     bool    graveAccentKeyIsPressed    = (nKey == Qt::Key_QuoteLeft);
     bool    numKeyIsPressed            = (nKey >= Qt::Key_0 && nKey <= Qt::Key_9 );
 
-    if(graveAccentKeyIsPressed)
+    if (graveAccentKeyIsPressed)
     {
         set_label(0);
     }
-    else if(numKeyIsPressed)
+    else if (numKeyIsPressed)
     {
         int asciiToNumber = nKey - Qt::Key_0;
 
-        if(asciiToNumber < m_objList.size() )
+        if (asciiToNumber < m_objList.size() )
         {
             set_label(asciiToNumber);
         }

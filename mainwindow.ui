@@ -89,7 +89,7 @@
        </widget>
       </item>
       <item>
-       <widget class="label_img" name="label_image">
+       <widget class="LabelImage" name="label_image">
         <property name="sizePolicy">
          <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
           <horstretch>0</horstretch>
@@ -814,9 +814,9 @@ QTableView {
  <layoutdefault spacing="6" margin="11"/>
  <customwidgets>
   <customwidget>
-   <class>label_img</class>
+   <class>LabelImage</class>
    <extends>QLabel</extends>
-   <header location="global">label_img.h</header>
+   <header location="global">labelimage.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

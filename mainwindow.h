@@ -5,12 +5,18 @@
 #include <QWheelEvent>
 #include <QTableWidgetItem>
 #include <QMessageBox>
+#include <QRectF>
 
 #include <iostream>
 #include <fstream>
 
 #include <opencv2/core.hpp>
 #include <opencv2/videoio.hpp>
+
+#include <opencv2/dnn/dnn.hpp>
+
+#include "labelimage.h"
+
 
 namespace Ui {
 class MainWindow;
@@ -89,6 +95,10 @@ private:
 
     QStringList     m_objList;
     int             m_objIndex;
+
+    cv::dnn::Net    m_net;
+
+    QVector<ObjectLabelingBox> _detectObjects(const cv::Mat & image);
 };
 
 #endif // MAINWINDOW_H

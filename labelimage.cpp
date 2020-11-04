@@ -1,4 +1,4 @@
-#include "label_img.h"
+#include "labelimage.h"
 #include <QPainter>
 #include <math.h>       /* fabs */
 
@@ -105,6 +105,7 @@ void LabelImage::setMousePosition(int x, int y)
 
 bool LabelImage::openImage(const QString & qstrImg)
 {
+    m_detectedObjects.clear();
     QImage img(qstrImg);
 
     if (img.isNull())
@@ -136,6 +137,7 @@ bool LabelImage::openImage(const QString & qstrImg)
 
 bool LabelImage::setCvImage(const cv::Mat & cvImage)
 {
+    m_detectedObjects.clear();
     if (cvImage.empty())
     {
         m_inputImg = QImage();
@@ -176,11 +178,22 @@ void LabelImage::showImage()
 
     QColor crossLineColor(255, 187, 0);
 
+    drawDetectedObjects(painter, QColor(255, 0, 0, 100));
     drawCrossLine(painter, crossLineColor, penThick);
     drawFocusedObjectBox(painter, Qt::magenta, penThick);
     drawObjectBoxes(painter, penThick);
 
     this->setPixmap(QPixmap::fromImage(imageOnUi));
+}
+
+QVector<ObjectLabelingBox> LabelImage::objBoundingBoxes() const
+{
+    return m_objBoundingBoxes;
+}
+
+void LabelImage::resetObjBoundingBoxes()
+{
+    m_objBoundingBoxes.clear();
 }
 
 void LabelImage::loadLabelData(const QString& labelFilePath)
@@ -222,6 +235,16 @@ void LabelImage::loadLabelData(const QString& labelFilePath)
             }
         }
     }
+}
+
+void LabelImage::setDrawObjectBoxColors(const QVector<QColor> &drawObjectBoxColor)
+{
+    m_drawObjectBoxColor = drawObjectBoxColor;
+}
+
+void LabelImage::setDetectedObjects(const QVector<ObjectLabelingBox> &detectedObjects)
+{
+    m_detectedObjects = detectedObjects;
 }
 
 void LabelImage::setFocusObjectLabel(int nLabel)
@@ -297,6 +320,18 @@ void LabelImage::drawObjectBoxes(QPainter& painter, int thickWidth)
     }
 }
 
+void LabelImage::drawDetectedObjects(QPainter& painter, const QColor & color)
+{
+    QPen pen;
+    pen.setWidth(2);
+    pen.setColor(color);
+    painter.setPen(pen);
+    for (const ObjectLabelingBox & obj: m_detectedObjects)
+    {
+        painter.drawRect(cvtRelativeToAbsoluteRectInUi(obj.box));
+    }
+}
+
 void LabelImage::removeFocusedObjectBox(QPointF point)
 {
     int     removeBoxIdx = -1;
@@ -360,4 +395,9 @@ QPoint LabelImage::cvtRelativeToAbsolutePoint(QPointF p)
 QPointF LabelImage::cvtAbsoluteToRelativePoint(QPoint p)
 {
     return QPointF(static_cast<double>(p.x()) / this->width(), static_cast<double>(p.y()) / this->height());
+}
+
+QVector<QColor> LabelImage::getDrawObjectBoxColors() const
+{
+    return m_drawObjectBoxColor;
 }

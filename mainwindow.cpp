@@ -18,7 +18,8 @@ using namespace std;
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
-    ui(new Ui::MainWindow)
+    ui(new Ui::MainWindow),
+    m_settings("APP", "YOLO_LABEL")
 {
     ui->setupUi(this);
 
@@ -29,13 +30,18 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(new QShortcut(QKeySequence(Qt::Key_W), this), SIGNAL(activated()), this, SLOT(prev_label()));
     connect(new QShortcut(QKeySequence(Qt::Key_A), this), SIGNAL(activated()), this, SLOT(prev_img()));
     connect(new QShortcut(QKeySequence(Qt::Key_D), this), SIGNAL(activated()), this, SLOT(next_img()));
-    connect(new QShortcut(QKeySequence(Qt::Key_Space), this), SIGNAL(activated()), this, SLOT(next_img()));
     connect(new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_D), this), SIGNAL(activated()), this, SLOT(remove_img()));
+
+    connect(new QShortcut(QKeySequence(Qt::Key_Down), this), SIGNAL(activated()), this, SLOT(next_label()));
+    connect(new QShortcut(QKeySequence(Qt::Key_Up), this), SIGNAL(activated()), this, SLOT(prev_label()));
+    connect(new QShortcut(QKeySequence(Qt::Key_Left), this), SIGNAL(activated()), this, SLOT(prev_img()));
+    connect(new QShortcut(QKeySequence(Qt::Key_Right), this), SIGNAL(activated()), this, SLOT(next_img()));
+    connect(new QShortcut(QKeySequence(Qt::Key_Space), this), SIGNAL(activated()), this, SLOT(next_img()));
 
     init_table_widget();
 
     m_net = cv::dnn::readNetFromDarknet("D:\\hands\\yolov4-tiny-hand.cfg",
-                                        "D:\\hands\\backup\\yolov4-tiny-hand_last.weights");
+                                        "D:\\hands\\yolov4-tiny-hand_final.weights");
     m_net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
     m_net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
 }
@@ -374,15 +380,17 @@ bool MainWindow::open_video_file()
 
     //pjreddie_style_msgBox(QMessageBox::Information,"Help", "Step 1. Open Your Data Set Directory");
 
-    QWidget w;
-    QString videoFile = QFileDialog::getOpenFileName(
+    QString videoFilePath = m_settings.value("last_video_path", "./").toString();
+    QWidget w(this);
+    videoFilePath = QFileDialog::getOpenFileName(
                 &w,
                 tr("Open Dataset Directory"),
-                "./");
-    if (videoFile.isEmpty())
+                videoFilePath);
+    if (videoFilePath.isEmpty())
         return false;
+    m_settings.setValue("last_video_path", videoFilePath);
 
-    QFileInfo videoFileInfo(videoFile);
+    QFileInfo videoFileInfo(videoFilePath);
     QDir dir = videoFileInfo.absoluteDir();
     if (!dir.exists(videoFileInfo.baseName()))
     {
@@ -400,7 +408,7 @@ bool MainWindow::open_video_file()
     m_imgDir = dir.absolutePath();
 
     m_video = cv::makePtr<cv::VideoCapture>();
-    if (!m_video->open(videoFile.toStdString()))
+    if (!m_video->open(videoFilePath.toStdString()))
     {
         m_video.reset();
         m_imgDir.clear();
@@ -417,13 +425,17 @@ bool MainWindow::open_img_dir()
 
     //pjreddie_style_msgBox(QMessageBox::Information,"Help", "Step 1. Open Your Data Set Directory");
 
-    QWidget w;
-    QString imgDir = QFileDialog::getExistingDirectory(
+    QString imageDir = m_settings.value("last_image_dir", "./").toString();
+    QWidget w(this);
+    imageDir = QFileDialog::getExistingDirectory(
                 &w,
                 tr("Open Dataset Directory"),
-                "./",QFileDialog::ShowDirsOnly);
+                imageDir,QFileDialog::ShowDirsOnly);
+    if (imageDir.isEmpty())
+        return false;
+    m_settings.setValue("last_image_dir", imageDir);
 
-    QDir dir(imgDir);
+    QDir dir(imageDir);
 
     QStringList fileList = dir.entryList(
                 QStringList() << "*.jpg" << "*.JPG" << "*.png",
@@ -435,7 +447,7 @@ bool MainWindow::open_img_dir()
         return false;
     }
 
-    m_imgDir    = imgDir;
+    m_imgDir   = imageDir;
     m_imgList  = fileList;
 
     for (QString& str: m_imgList)
@@ -447,17 +459,17 @@ bool MainWindow::open_obj_file()
 {
     //pjreddie_style_msgBox(QMessageBox::Information,"Help", "Step 2. Open Your Label List File(*.txt or *.names)");
 
-    QString fileLabelList = QFileDialog::getOpenFileName(
-                nullptr,
+    QString fileLabelList = m_settings.value("last_file_label_list", "./").toString();
+    QWidget w(this);
+    fileLabelList = QFileDialog::getOpenFileName(
+                &w,
                 tr("Open LabelList file"),
-                "./",
+                fileLabelList,
                 tr("LabelList Files (*.txt *.names)"));
-
-    if (fileLabelList.size() == 0)
-    {
-        pjreddie_style_msgBox(QMessageBox::Critical,"Error", "LabelList file is not opened()");
+    if (fileLabelList.isEmpty())
         return false;
-    }
+    m_settings.setValue("last_file_label_list", fileLabelList);
+
     load_label_list_data(fileLabelList);
     return true;
 }
@@ -494,7 +506,7 @@ QVector<ObjectLabelingBox> MainWindow::_detectObjects(const cv::Mat & image)
         {
             float * v_ptr = out.ptr<float>(y, 0);
             float confidence = v_ptr[5];
-            if (confidence < 0.2f)
+            if (confidence < 0.01f)
                 continue;
             float hw = v_ptr[2] * 0.5f;
             float hh = v_ptr[3] * 0.5f;

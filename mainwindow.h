@@ -6,6 +6,7 @@
 #include <QTableWidgetItem>
 #include <QMessageBox>
 #include <QRectF>
+#include <QSettings>
 
 #include <iostream>
 #include <fstream>
@@ -86,6 +87,8 @@ protected:
     void    wheelEvent(QWheelEvent *);
 
 private:
+    QSettings       m_settings;
+
     QString         m_imgDir;
     QStringList     m_imgList;
     int             m_imgIndex;
